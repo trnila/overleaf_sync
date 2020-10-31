@@ -64,6 +64,12 @@ class Syncer:
         if changes:
             subprocess.check_call(["git", "add", "."], cwd=path)
             subprocess.check_call(["git", "commit", "-m", "autocommit"], cwd=path)
+            remotes = subprocess.check_output(["git", "remote"], cwd=path).decode('utf-8').strip()
+            if remotes:
+                subprocess.check_call(["git", "push"], cwd=path)
+
+
+
 
     def sync_all(self, path):
         os.makedirs(path, exist_ok=True)
