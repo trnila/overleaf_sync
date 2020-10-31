@@ -50,44 +50,46 @@ class OverleafAPI:
         with zipfile.ZipFile(io.BytesIO(page.content)) as z:
             z.extractall(path)
 
-def cmd_sync(conf):
-    with open(os.path.join(conf.path, ".projectid")) as f:
-        project_id = f.read().strip()
+class Syncer:
+    def __init__(self, url, email, password):
+        self.api = OverleafAPI(url, email, password)
 
-    api = OverleafAPI(conf.url, conf.email, conf.password)
-    api.download_extract(project_id, conf.path)
-    subprocess.check_call(["git", "commit", "-a", "-m", "autocommit"], cwd=conf.path)
+    def sync_project(self, path):
+        with open(os.path.join(path, ".projectid")) as f:
+            project_id = f.read().strip()
 
-def cmd_sync_all(conf):
-    projects = {}
-    for obj in os.listdir(conf.path):
-        try:
-            with open(os.path.join(conf.path, obj, ".projectid")) as f:
-                projects[os.path.join(conf.path, obj)] = f.read().strip()
-        except NotADirectoryError:
-            pass
-
-    api = OverleafAPI(conf.url, conf.email, conf.password)
-    for project in api.projects():
-        if project['id'] not in projects.values():
-            project_path = os.path.join(conf.path, project['name'].replace(' ', '_'))
-            try:
-                os.makedirs(project_path)
-            except FileExistsError:
-                project_path += f'_{project["id"]}'
-                os.makedirs(project_path)
-            with open(os.path.join(project_path, ".projectid"), "w") as f:
-                f.write(project['id'])
-            subprocess.check_call(["git", "init"], cwd=project_path)
-            projects[project_path] = project['id']
-
-    for path, project_id in projects.items():
-        api.download_extract(project_id, path)
-        print(path)
-        subprocess.check_call(["git", "add", "."], cwd=path)
+        self.api.download_extract(project_id, path)
         changes = subprocess.check_output(["git", "status", "--porcelain"], cwd=path).decode('utf-8').strip()
         if changes:
+            subprocess.check_call(["git", "add", "."], cwd=path)
             subprocess.check_call(["git", "commit", "-m", "autocommit"], cwd=path)
+
+    def sync_all(self, path):
+        os.makedirs(path, exist_ok=True)
+
+        projects = {}
+        for obj in os.listdir(path):
+            try:
+                with open(os.path.join(path, obj, ".projectid")) as f:
+                    projects[os.path.join(path, obj)] = f.read().strip()
+            except NotADirectoryError:
+                pass
+
+        for project in self.api.projects():
+            if project['id'] not in projects.values():
+                project_path = os.path.join(path, project['name'].strip().replace(' ', '_'))
+                try:
+                    os.makedirs(project_path)
+                except FileExistsError:
+                    project_path += f'_{project["id"]}'
+                    os.makedirs(project_path)
+                with open(os.path.join(project_path, ".projectid"), "w") as f:
+                    f.write(project['id'])
+                subprocess.check_call(["git", "init"], cwd=project_path)
+                projects[project_path] = project['id']
+
+        for path, project_id in projects.items():
+            self.sync_project(path)
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -107,4 +109,10 @@ cnf.read(os.path.expanduser('~/.overleaf'))
 conf.email = cnf.get('auth', 'email')
 conf.password = cnf.get('auth', 'password')
 
-globals()[f'cmd_{conf.cmd}'](conf)
+syncer = Syncer(conf.url, conf.email, conf.password)
+if conf.cmd == 'sync':
+    syncer.sync_project(conf.path)
+elif conf.cmd == 'sync_all':
+    syncer.sync_all(conf.path)
+else:
+    print(f"Unknown command: {conf.cmd}")
