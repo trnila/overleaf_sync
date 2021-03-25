@@ -9,6 +9,7 @@ import os
 import io
 import subprocess
 import logging
+import html
 
 class OverleafAPI:
     def __init__(self, url, email, password):
@@ -26,7 +27,7 @@ class OverleafAPI:
         self.logged_in = True
 
         page = self.session.get(f'{self.url}/login')
-        m = re.search(r'window.csrfToken = "([^"]+)', page.content.decode('utf-8'))
+        m = re.search(r'<meta name="ol-csrfToken" content="([^"]+)', page.content.decode('utf-8'))
         csrf_token = m.group(1)
 
         page = self.session.post(f"{conf.url}/login", data={
@@ -39,10 +40,10 @@ class OverleafAPI:
         self.ensure_login()
         page = self.session.get(self.url)
 
-        m = re.search(r"({\"projects\":.*?)</script>", page.content.decode('utf-8'), flags=re.DOTALL)
-        data = json.loads(m.group(1))
+        m = re.search(r'<meta name="ol-projects" data-type="json" content="(.*?)"', page.content.decode('utf-8'), flags=re.DOTALL)
+        data = json.loads(html.unescape(m.group(1)))
 
-        return data['projects']
+        return data
 
     def download_extract(self, project_id, path):
         self.ensure_login()
